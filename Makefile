@@ -6,10 +6,13 @@ db:
 	python manage.py migrate
 
 test:
-	python manage.py test api celerytasks client web
+	python manage.py test api celerytasks web
+
+test_client:
+	python -m unittest client.tests
 
 coverage:
-	coverage run manage.py test api celerytasks client web
+	coverage run manage.py test api celerytasks web
 	coverage html
 
 flake8:
