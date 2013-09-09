@@ -259,8 +259,7 @@ CELERY_ALWAYS_EAGER = False
 EAGER_PROPAGATES_EXCEPTION = True
 
 # make sure we import the task modules
-CELERY_IMPORTS = ('provider.ec2',
-                  'provider.mock')
+CELERY_IMPORTS = ('api.tasks',)
 
 djcelery.setup_loader()
 

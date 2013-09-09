@@ -138,12 +138,12 @@ class FlavorViewSet(OwnerViewSet):
         # set default cloud-init configuration
         if not 'init' in request.DATA:
             request.DATA['init'] = models.FlavorManager.load_cloud_config_base()
-        params = json.loads(request.DATA['params'])
-        params.setdefault('region', 'us-east-1')
-        params.setdefault('image', models.Flavor.IMAGE_MAP[params['region']])
-        params.setdefault('size', 'm1.medium')
-        params.setdefault('zone', 'any')
-        request.DATA['params'] = json.dumps(params)
+#         params = json.loads(request.DATA['params'])
+#         params.setdefault('region', 'us-east-1')
+#         params.setdefault('image', models.Flavor.IMAGE_MAP[params['region']])
+#         params.setdefault('size', 'm1.medium')
+#         params.setdefault('zone', 'any')
+#         request.DATA['params'] = json.dumps(params)
         return super(FlavorViewSet, self).create(request, **kwargs)
 
 
@@ -237,7 +237,6 @@ class FormationViewSet(OwnerViewSet):
             formation.destroy()
         except EnvironmentError as e:
             return Response(str(e), status=HTTP_400_BAD_REQUEST)
-        formation.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

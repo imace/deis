@@ -1,35 +1,26 @@
 
 from __future__ import unicode_literals
 
-from celery import task
 
-from api.models import Formation, App
-
-
-@task
-def configure(config, node, layer):
+def configure_node(node):
+    config = {}
     config['config'] = config
     config['node_id'] = node.id
-    config['layer_id'] = layer.id
+    config['layer_id'] = node.layer.id
     return config
 
 
-@task
-def update(obj):
-    return
+def bootstrap_node(node):
+    return node
 
 
-@task
-def destroy(obj):
-    return
+def converge_node(node):
+    return node
 
 
-@task
-def converge(instance=None):
-    if instance.__class__ == Formation:
-        print('Converging Formation...')
-    elif instance.__class__ == App:
-        print('Converging Application')
-    elif instance is None:
-        print('Converging Controller')
-    return
+def destroy_node(node):
+    return node
+
+
+def destroy_formation(formation):
+    return formation

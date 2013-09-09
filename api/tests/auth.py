@@ -56,11 +56,11 @@ class AuthTest(TestCase):
         url = '/api/providers'
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['count'], 2)
         url = '/api/flavors'
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['count'], 8)  # 8 regions
+        self.assertEqual(response.data['count'], 10)
         # test logout and login
         url = '/api/auth/logout/'
         response = self.client.post(url, content_type='application/json')

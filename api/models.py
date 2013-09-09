@@ -7,8 +7,6 @@ Data models for the Deis API.
 # pylint: disable=R0903,W0232
 
 from __future__ import unicode_literals
-import importlib
-import json
 import os
 import subprocess
 import yaml
@@ -17,13 +15,11 @@ from celery.canvas import group
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import models
-from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.dispatch.dispatcher import Signal
 from django.utils.encoding import python_2_unicode_compatible
 
 from api import fields
-from provider import import_provider_tasks
 
 
 # define custom signals
@@ -77,7 +73,7 @@ class ProviderManager(models.Manager):
         :param user: who will own the Providers
         :type user: a deis user
         """
-        providers = (('ec2', 'ec2'),)
+        providers = (('ec2', 'ec2'), ('mock', 'mock'))
         for p_id, p_type in providers:
             self.create(owner=user, id=p_id, type=p_type, creds='{}')
 
@@ -123,47 +119,7 @@ class FlavorManager(models.Manager):
 
     def seed(self, user, **kwargs):
         """Seed the database with default Flavors for each cloud region."""
-        # TODO: add optimized AMIs to default flavors
-        flavors = (
-            {'id': 'ec2-us-east-1', 'provider': 'ec2',
-             'params': json.dumps({
-                 'region': 'us-east-1', 'image': Flavor.IMAGE_MAP['us-east-1'],
-                 'zone': 'any', 'size': 'm1.medium'})},
-            {'id': 'ec2-us-west-1', 'provider': 'ec2',
-             'params': json.dumps({
-                 'region': 'us-west-1', 'image': Flavor.IMAGE_MAP['us-west-1'],
-                 'zone': 'any', 'size': 'm1.medium'})},
-            {'id': 'ec2-us-west-2', 'provider': 'ec2',
-             'params': json.dumps({
-                 'region': 'us-west-2', 'image': Flavor.IMAGE_MAP['us-west-2'],
-                 'zone': 'any', 'size': 'm1.medium'})},
-            {'id': 'ec2-eu-west-1', 'provider': 'ec2',
-             'params': json.dumps({
-                 'region': 'eu-west-1', 'image': Flavor.IMAGE_MAP['eu-west-1'],
-                 'zone': 'any', 'size': 'm1.medium'})},
-            {'id': 'ec2-ap-northeast-1', 'provider': 'ec2',
-             'params': json.dumps({
-                 'region': 'ap-northeast-1', 'image': Flavor.IMAGE_MAP['ap-northeast-1'],
-                 'zone': 'any', 'size': 'm1.medium'})},
-            {'id': 'ec2-ap-southeast-1', 'provider': 'ec2',
-             'params': json.dumps({
-                 'region': 'ap-southeast-1', 'image': Flavor.IMAGE_MAP['ap-southeast-1'],
-                 'zone': 'any', 'size': 'm1.medium'})},
-            {'id': 'ec2-ap-southeast-2', 'provider': 'ec2',
-             'params': json.dumps({
-                 'region': 'ap-southeast-2', 'image': Flavor.IMAGE_MAP['ap-southeast-2'],
-                 'zone': 'any', 'size': 'm1.medium'})},
-            {'id': 'ec2-sa-east-1', 'provider': 'ec2',
-             'params': json.dumps({
-                 'region': 'sa-east-1', 'image': Flavor.IMAGE_MAP['sa-east-1'],
-                 'zone': 'any', 'size': 'm1.medium'})},
-        )
-        cloud_config = self.load_cloud_config_base()
-        for flavor in flavors:
-            provider = flavor.pop('provider')
-            flavor['provider'] = Provider.objects.get(owner=user, id=provider)
-            flavor['init'] = cloud_config
-            self.create(owner=user, **flavor)
+        return tasks.seed_flavors.delay(user.username).wait()  # @UndefinedVariable
 
 
 @python_2_unicode_compatible
@@ -177,21 +133,8 @@ class Flavor(UuidAuditedModel):
     owner = models.ForeignKey(settings.AUTH_USER_MODEL)
     id = models.SlugField(max_length=64)
     provider = models.ForeignKey('Provider')
-    params = fields.ParamsField()
+    params = fields.ParamsField(blank=True)
     init = fields.CloudInitField()
-
-    # Deis-optimized EC2 amis -- with 3.8 kernel, chef 11 deps,
-    # and large docker images (e.g. buildstep) pre-installed
-    IMAGE_MAP = {
-        'ap-northeast-1': 'ami-6da8356c',
-        'ap-southeast-1': 'ami-a66f24f4',
-        'ap-southeast-2': 'ami-d5f66bef',
-        'eu-west-1': 'ami-acbf5adb',
-        'sa-east-1': 'ami-f9fd5ae4',
-        'us-east-1': 'ami-69f3bc00',
-        'us-west-1': 'ami-f0695cb5',
-        'us-west-2': 'ami-ea1e82da',
-    }
 
     class Meta:
         unique_together = (('owner', 'id'),)
@@ -312,28 +255,12 @@ class Formation(UuidAuditedModel):
 
     def converge(self, databag):
         """Call a celery task to update the formation data bag."""
-#         if settings.CHEF_ENABLED:
-#             controller.update_formation.delay(self.id, databag).wait()  # @UndefinedVariable
-        # TODO: batch node converging by layer.level
-        nodes = [node for node in self.node_set.all()]
-        job = group(*[n.converge() for n in nodes])
-        job.apply_async().join()
+        tasks.converge_formation.delay(self.id).wait()  # @UndefinedVariable
         return databag
 
     def destroy(self):
         """Create subtasks to terminate all nodes in parallel."""
-        all_layers = self.layer_set.all()
-        tasks = [layer.destroy(async=True) for layer in all_layers]
-        node_tasks, layer_tasks = [], []
-        for n, l in tasks:
-            node_tasks.extend(n), layer_tasks.extend(l)
-        # kill all the nodes in parallel
-        group(node_tasks).apply_async().join()
-        # kill all the layers in parallel
-        group(layer_tasks).apply_async().join()
-#         # call a celery task to update the formation data bag
-#         if settings.CHEF_ENABLED:
-#             controller.destroy_formation.delay(self.id).wait()  # @UndefinedVariable
+        tasks.destroy_formation.delay(self.id).wait()  # @UndefinedVariable
 
 
 @python_2_unicode_compatible
@@ -368,27 +295,11 @@ class Layer(UuidAuditedModel):
     def __str__(self):
         return self.id
 
-    def build(self, *args, **kwargs):
-        tasks = import_provider_tasks(self.flavor.provider.type)
-        name = "{0}-{1}".format(self.formation.id, self.id)
-        args = (name, self.flavor.provider.creds.copy(),
-                self.flavor.params.copy())
-        return tasks.build_layer.delay(*args).wait()
+    def build(self):
+        tasks.build_layer.delay(self.id).wait()  # @UndefinedVariable
 
-    def destroy(self, async=False):
-        tasks = import_provider_tasks(self.flavor.provider.type)
-        # create subtasks to terminate all nodes in parallel
-        node_tasks = [node.destroy(async=True) for node in self.node_set.all()]
-        # purge other hosting provider infrastructure
-        name = "{0}-{1}".format(self.formation.id, self.id)
-        args = (name, self.flavor.provider.creds.copy(),
-                self.flavor.params.copy())
-        layer_tasks = [tasks.destroy_layer.subtask(args)]
-        if async:
-            return node_tasks, layer_tasks
-        # destroy nodes, then the layer
-        group(node_tasks).apply_async().join()
-        group(layer_tasks).apply_async().join()
+    def destroy(self):
+        tasks.destroy_layer.delay(self.id).wait()  # @UndefinedVariable
 
 
 class NodeManager(models.Manager):
@@ -418,20 +329,18 @@ class NodeManager(models.Manager):
                 continue
             while diff < 0:
                 node = nodes.pop(0)
-                funcs.append(node.terminate)
+                funcs.append(tasks.destroy_node.si(node.id))
                 diff = requested - len(nodes)
                 changed = True
             while diff > 0:
                 node = self.new(formation, layer)
                 nodes.append(node)
-                funcs.append(node.launch)
+                funcs.append(tasks.build_node.si(node.id))
                 diff = requested - len(nodes)
                 changed = True
-        # http://docs.celeryproject.org/en/latest/userguide/canvas.html#groups
-        job = [func() for func in funcs]
         # launch/terminate nodes in parallel
-        if job:
-            group(*job).apply_async().join()
+        if funcs:
+            group(*funcs).apply_async().join()
         # always scale and balance every application
         if nodes:
             for app in formation.app_set.all():
@@ -477,76 +386,18 @@ class Node(UuidAuditedModel):
     def __str__(self):
         return self.id
 
-    def launch(self, *args, **kwargs):
-        tasks = import_provider_tasks(self.layer.flavor.provider.type)
-        args = self._prepare_launch_args()
-        return tasks.launch_node.subtask(args)
+    def build(self):
+        return tasks.build_node.delay(self.id).wait()  # @UndefinedVariable
 
-    def _prepare_launch_args(self):
-        creds = self.layer.flavor.provider.creds.copy()
-        params = self.layer.flavor.params.copy()
-        params['layer'] = "{0}-{1}".format(self.formation.id, self.layer.id)
-        params['id'] = self.id
-        base_init = self.layer.flavor.init.copy()
-        init = _CM.configure(base_init, self, self.layer)
-        # add the formation's ssh pubkey
-        init.setdefault(
-            'ssh_authorized_keys', []).append(self.layer.ssh_public_key)
-        # add all of the owner's SSH keys
-        init['ssh_authorized_keys'].extend([k.public for k in self.formation.owner.key_set.all()])
-        ssh_username = self.layer.ssh_username
-        ssh_private_key = self.layer.ssh_private_key
-        args = (self.uuid, creds, params, init, ssh_username, ssh_private_key)
-        return args
+    def destroy(self):
+        return tasks.destroy_node.delay(self.id).wait()  # @UndefinedVariable
 
-    def converge(self, *args, **kwargs):
-        tasks = import_provider_tasks(self.layer.flavor.provider.type)
-        args = self._prepare_converge_args()
-        # TODO: figure out how to store task return values in model
-        return tasks.converge_node.subtask(args)
-
-    def _prepare_converge_args(self):
-        ssh_username = self.layer.ssh_username
-        fqdn = self.fqdn
-        ssh_private_key = self.layer.ssh_private_key
-        args = (self.uuid, ssh_username, fqdn, ssh_private_key)
-        return args
-
-    def terminate(self, *args, **kwargs):
-        tasks = import_provider_tasks(self.layer.flavor.provider.type)
-        args = self._prepare_terminate_args()
-        # TODO: figure out how to store task return values in model
-        return tasks.terminate_node.subtask(args)
-
-    def _prepare_terminate_args(self):
-        creds = self.layer.flavor.provider.creds.copy()
-        params = self.layer.flavor.params.copy()
-        args = (self.uuid, creds, params, self.provider_id)
-        return args
+    def converge(self):
+        return tasks.converge_node.delay(self.id).wait()  # @UndefinedVariable
 
     def run(self, app, *args, **kwargs):
-        tasks = import_provider_tasks(self.layer.flavor.provider.type)
         command = ' '.join(*args)
-        # prepare app-specific docker arguments
-        app_id = app.id
-        release = app.release_set.order_by('-created')[0]
-        version = release.version
-        docker_args = ' '.join(
-            ['-v',
-             '/opt/deis/runtime/slugs/{app_id}-{version}/app:/app'.format(**locals()),
-             release.image])
-        base_cmd = "export HOME=/app; cd /app && for profile in " \
-                   "`find /app/.profile.d/*.sh -type f`; do . $profile; done"
-        command = "/bin/sh -c '{base_cmd} && {command}'".format(**locals())
-        args = list(self._prepare_converge_args()) + [docker_args] + [command]
-        task = tasks.run_node.subtask(args)
-        return task.apply_async().wait()
-
-    def destroy(self, async=False):
-        subtask = self.terminate()
-        if async:
-            return subtask
-        return subtask.apply_async().wait()
+        return tasks.run_node.delay(app.id, command).wait()  # @UndefinedVariable
 
 
 @python_2_unicode_compatible
@@ -879,20 +730,6 @@ def new_release(sender, **kwargs):
         build=build, version=new_version)
     return release
 
-# now that we've defined models that may be imported by celery tasks
-# import user-defined config management module
-_CM = importlib.import_module(settings.CM_MODULE)
 
-
-@receiver(post_save)
-def update_cm(sender, instance, **kwargs):
-    if instance.__class__ not in (Formation, App, Key, User):
-        return
-    _CM.update.delay(instance).wait()
-
-
-@receiver(post_delete)
-def destroy_cm(sender, instance, **kwargs):
-    if instance.__class__ not in (Formation, App, Key, User):
-        return
-    _CM.destroy.delay(instance).wait()
+# import tasks after models are defined
+from api import tasks
