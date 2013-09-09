@@ -241,16 +241,21 @@ class FormationViewSet(OwnerViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class FormationLayerViewSet(OwnerViewSet):
+class FormationScopedViewSet(OwnerViewSet):
+
+    def get_queryset(self, **kwargs):
+        formations = models.Formation.objects.filter(
+            owner=self.request.user)
+        formation = get_object_or_404(formations, id=self.kwargs['id'])
+        return self.model.objects.filter(owner=self.request.user,
+                                         formation=formation)
+
+
+class FormationLayerViewSet(FormationScopedViewSet):
     """RESTful views for :class:`~api.models.Layer`."""
 
     model = models.Layer
     serializer_class = serializers.LayerSerializer
-
-    def get_queryset(self, **kwargs):
-        formation = models.Formation.objects.get(
-            owner=self.request.user, id=self.kwargs['id'])
-        return self.model.objects.filter(owner=self.request.user, formation=formation)
 
     def get_object(self, *args, **kwargs):
         qs = self.get_queryset(**kwargs)
@@ -269,8 +274,8 @@ class FormationLayerViewSet(OwnerViewSet):
             request.DATA['ssh_public_key'] = key.exportKey('OpenSSH')
         try:
             return OwnerViewSet.create(self, request, **kwargs)
-        except IntegrityError as e:
-            return Response("Layer with this Id already exists. {}".format(e),
+        except IntegrityError:
+            return Response("Layer with this Id already exists",
                             status=HTTP_400_BAD_REQUEST)
 
     def post_save(self, layer, created=False, **kwargs):
@@ -284,17 +289,11 @@ class FormationLayerViewSet(OwnerViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class FormationNodeViewSet(OwnerViewSet):
+class FormationNodeViewSet(FormationScopedViewSet):
     """RESTful views for :class:`~api.models.Node`."""
 
     model = models.Node
     serializer_class = serializers.NodeSerializer
-
-    def get_queryset(self, **kwargs):
-        formation = models.Formation.objects.get(
-            owner=self.request.user, id=self.kwargs['id'])
-        return self.model.objects.filter(owner=self.request.user,
-                                         formation=formation)
 
     def get_object(self, *args, **kwargs):
         qs = self.get_queryset(**kwargs)

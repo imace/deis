@@ -1103,7 +1103,7 @@ class DeisClient(object):
         args = {'<formation>': formation, '<id>': layer_name,
                 '<flavor>': flavor, '--proxy': True, '--runtime': True}
         self.layers_create(args)
-        print('\nUse `deis scale --formation={formation} {layer_name}=1` '
+        print('\nUse `deis nodes:scale {formation} {layer_name}=1` '
               'to scale a basic formation'.format(**locals()))
 
     def keys_add(self, args):
@@ -1506,9 +1506,9 @@ class DeisClient(object):
         Use `providers:discover` to update credentials of the
         default providers and flavors that come pre-installed.
 
-        Usage: deis providers:create --type=<type> [--id=<id> --creds=<creds>]
+        Usage: deis providers:create <id> <type> <creds>
         """
-        type = args.get('--type')  # @ReservedAssignment
+        type = args.get('<type>')  # @ReservedAssignment
         if type == 'ec2':
             # read creds from envvars
             for k in ('AWS_ACCESS_KEY', 'AWS_SECRET_KEY'):
@@ -1517,7 +1517,9 @@ class DeisClient(object):
                     raise EnvironmentError(msg)
             creds = {'access_key': os.environ['AWS_ACCESS_KEY'],
                      'secret_key': os.environ['AWS_SECRET_KEY']}
-        id = args.get('--id')  # @ReservedAssignment
+        else:
+            creds = json.loads(args.get('<creds>'))
+        id = args.get('<id>')  # @ReservedAssignment
         if not id:
             id = type  # @ReservedAssignment
         body = {'id': id, 'type': type, 'creds': json.dumps(creds)}
@@ -1696,11 +1698,10 @@ def main():
     # re-parse docopt with the relevant docstring
     # unless cmd needs to use sys.argv directly
     # if cmd not in ('formations_run', 'ssh'):
-    docstring = trim(getattr(cli, cmd).__doc__)
-    if 'Usage: ' in docstring:
-        args.update(docopt(docstring))
-    # find the method for dispatching
     if hasattr(cli, cmd):
+        docstring = trim(getattr(cli, cmd).__doc__)
+        if 'Usage: ' in docstring:
+            args.update(docopt(docstring))
         method = getattr(cli, cmd)
     else:
         raise DocoptExit('Found no matching command')
@@ -1711,7 +1712,7 @@ def main():
         raise DocoptExit(err.message)
     except ResponseError as err:
         resp = err.message
-        print('\n\n{} {}'.format(resp.status_code, resp.reason))
+        print('{} {}'.format(resp.status_code, resp.reason))
         print(resp.text)
         sys.exit(1)
 

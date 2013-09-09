@@ -6,7 +6,7 @@ from celery import task
 from api.models import Formation, App
 
 
-@task(name='mock.configure')
+@task
 def configure(config, node, layer):
     config['config'] = config
     config['node_id'] = node.id
@@ -14,17 +14,17 @@ def configure(config, node, layer):
     return config
 
 
-@task(name='mock.update')
+@task
 def update(obj):
     return
 
 
-@task(name='mock.destroy')
+@task
 def destroy(obj):
     return
 
 
-@task(name='mock.converge')
+@task
 def converge(instance=None):
     if instance.__class__ == Formation:
         print('Converging Formation...')

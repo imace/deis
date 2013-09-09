@@ -5,19 +5,19 @@ from api.models import Node
 from celery import task
 
 
-@task(name='mock.build_layer')
+@task
 def build_layer(layer, creds, params):
     # create security group any other infrastructure
     return
 
 
-@task(name='mock.destroy_layer')
+@task
 def destroy_layer(layer, creds, params):
     # delete security group and any other infrastructure
     return
 
 
-@task(name='mock.launch_node')
+@task
 def launch_node(node_id, creds, params, init, ssh_username, ssh_private_key):
     node = Node.objects.get(uuid=node_id)
     node.provider_id = 'i-1234567'
@@ -26,7 +26,7 @@ def launch_node(node_id, creds, params, init, ssh_username, ssh_private_key):
     node.save()
 
 
-@task(name='mock.terminate_node')
+@task
 def terminate_node(node_id, creds, params, provider_id):
     node = Node.objects.get(uuid=node_id)
     node.metadata = {'state': 'terminated'}
@@ -35,14 +35,14 @@ def terminate_node(node_id, creds, params, provider_id):
     node.delete()
 
 
-@task(name='mock.converge_node')
+@task
 def converge_node(node_id, ssh_username, fqdn, ssh_private_key):
     output = ""
     rc = 0
     return output, rc
 
 
-@task(name='mock.run_node')
+@task
 def run_node(node_id, ssh_username, fqdn, ssh_private_key, docker_args, command):
     output = """\
 total 80

@@ -13,10 +13,10 @@ from api.models import Node
 from deis import settings
 
 
-@task(name='ec2.build_layer')
+@task
 def build_layer(layer, creds, params):
     region = params.get('region', 'us-east-1')
-    conn = create_ec2_connection(creds, region)
+    conn = _create_ec2_connection(creds, region)
     # create a new sg and authorize all ports
     # use iptables on the host to firewall ports
     sg = conn.create_security_group(layer, 'Created by Deis')
@@ -34,14 +34,14 @@ def build_layer(layer, creds, params):
                 raise
 
 
-@task(name='ec2.destroy_layer')
+@task
 def destroy_layer(layer, creds, params):
     # there's an ec2 race condition on instances terminating
     # successfully but still holding a lock on the security group
     # let's take a nap
     time.sleep(5)
     region = params.get('region', 'us-east-1')
-    conn = create_ec2_connection(creds, region)
+    conn = _create_ec2_connection(creds, region)
     try:
         conn.delete_security_group(layer)
     except EC2ResponseError as e:
@@ -49,10 +49,10 @@ def destroy_layer(layer, creds, params):
             raise e
 
 
-@task(name='ec2.launch_node')
+@task
 def launch_node(node_id, creds, params, init, ssh_username, ssh_private_key):
     region = params.get('region', 'us-east-1')
-    conn = create_ec2_connection(creds, region)
+    conn = _create_ec2_connection(creds, region)
     # find or create the security group for this formation
     sg_name = params['layer']
     sg = conn.get_all_security_groups(sg_name)[0]
@@ -65,7 +65,7 @@ def launch_node(node_id, creds, params, init, ssh_username, ssh_private_key):
     if len(images) != 1:
         raise LookupError('Could not find AMI: %s' % image_id)
     image = images[0]
-    kwargs = prepare_run_kwargs(params, init)
+    kwargs = _prepare_run_kwargs(params, init)
     reservation = image.run(**kwargs)
     instances = reservation.instances
     boto = instances[0]
@@ -84,7 +84,7 @@ def launch_node(node_id, creds, params, init, ssh_username, ssh_private_key):
     node = Node.objects.get(uuid=node_id)
     node.provider_id = boto.id
     node.fqdn = boto.public_dns_name
-    node.metadata = format_metadata(boto)
+    node.metadata = _format_metadata(boto)
     node.save()
     # loop until cloud-init is finished
     ssh = util.connect_ssh(ssh_username, boto.public_dns_name, 22,
@@ -96,10 +96,10 @@ def launch_node(node_id, creds, params, init, ssh_username, ssh_private_key):
             ssh, 'ps auxw | egrep "cloud-init" | grep -v egrep')
 
 
-@task(name='ec2.terminate_node')
+@task
 def terminate_node(node_id, creds, params, provider_id):
     region = params.get('region', 'us-east-1')
-    conn = create_ec2_connection(creds, region)
+    conn = _create_ec2_connection(creds, region)
     if provider_id:
         conn.terminate_instances([provider_id])
         i = conn.get_all_instances([provider_id])[0].instances[0]
@@ -110,7 +110,7 @@ def terminate_node(node_id, creds, params, provider_id):
                 break
 
 
-@task(name='ec2.converge_node')
+@task
 def converge_node(node_id, ssh_username, fqdn, ssh_private_key,
                   command='sudo chef-client'):
     ssh = util.connect_ssh(ssh_username, fqdn, 22, ssh_private_key)
@@ -118,7 +118,7 @@ def converge_node(node_id, ssh_username, fqdn, ssh_private_key,
     return output, rc
 
 
-@task(name='ec2.run_node')
+@task
 def run_node(node_id, ssh_username, fqdn, ssh_private_key, docker_args, command):
     ssh = util.connect_ssh(ssh_username, fqdn, 22, ssh_private_key)
     command = "sudo docker run {docker_args} {command}".format(**locals())
@@ -128,7 +128,7 @@ def run_node(node_id, ssh_username, fqdn, ssh_private_key, docker_args, command)
 
 # utility functions
 
-def create_ec2_connection(creds, region):
+def _create_ec2_connection(creds, region):
     if not creds:
         raise EnvironmentError('No credentials provided')
     return ec2.connect_to_region(region,
@@ -136,7 +136,7 @@ def create_ec2_connection(creds, region):
                                  aws_secret_access_key=creds['secret_key'])
 
 
-def prepare_run_kwargs(params, init):
+def _prepare_run_kwargs(params, init):
     # start with sane defaults
     kwargs = {
         'min_count': 1, 'max_count': 1,
@@ -167,7 +167,7 @@ def prepare_run_kwargs(params, init):
     return kwargs
 
 
-def format_metadata(boto):
+def _format_metadata(boto):
     return {
         'architecture': boto.architecture,
         'block_device_mapping': {

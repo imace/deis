@@ -53,20 +53,37 @@ except Exception as e:
 
 @task
 def update(instance):
-    # create databag item if it doesn't exist
-    # update databag item
     return
 
 
 @task
 def destroy(instance):
-    # purge the node & client records from chef server
+#     # purge the node & client records from chef server
+#     client = ChefAPI(CHEF_SERVER_URL,
+#                      CHEF_CLIENT_NAME,
+#                      CHEF_CLIENT_KEY)
+#     client.delete_node(instance.id)
+#     client.delete_client(instance.id)
+    return
+
+
+def update_user(user):
     client = ChefAPI(CHEF_SERVER_URL,
                      CHEF_CLIENT_NAME,
                      CHEF_CLIENT_KEY)
-    client.delete_node(instance.id)
-    client.delete_client(instance.id)
-    return
+    # client.create_databag_item('deis-users', user.username, user.calculate())
+    client.update_databag_item('deis-users', user.username, user.calculate())
+
+
+def update_app(app):
+    client = ChefAPI(CHEF_SERVER_URL,
+                     CHEF_CLIENT_NAME,
+                     CHEF_CLIENT_KEY)
+    client.update_databag_item('deis-apps', app.id, app.calculate())
+
+
+def update_formation(formation, client):
+    client.update_databag_item('deis-formations', formation.id, formation.calculate())
 
 
 @task
@@ -102,7 +119,7 @@ def converge_formation(formation_id):
     return job.apply_async().join()
 
 
-@task(name='chef.bootstrap_node')
+@task
 def bootstrap_node(node):
     # loop until node is registered with chef
     # if chef bootstrapping fails, the node will not complete registration
