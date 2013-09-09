@@ -1025,12 +1025,10 @@ class DeisClient(object):
         all nodes in the formation, ensuring the formation is
         completely up-to-date.
 
-        Usage: deis formations:converge
+        Usage: deis formations:converge <id>
         """
-        formation = args.get('--formation')
-        if not formation:
-            formation = self._session.formation
-        sys.stdout.write('Converging {}... '.format(formation))
+        formation = args.get('<id>')
+        sys.stdout.write('Converging {} formation... '.format(formation))
         sys.stdout.flush()
         try:
             progress = TextProgress()

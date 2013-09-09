@@ -9,15 +9,15 @@ import time
 
 from celery.canvas import group
 
+from api.ssh import exec_ssh, connect_ssh
 from cm.chef_api import ChefAPI
-from provider import util
 
 
 CHEF_CONFIG_PATH = '/etc/chef'
 CHEF_INSTALL_TYPE = 'gems'
 CHEF_RUBY_VERSION = '1.9.1'
 CHEF_ENVIRONMENT = '_default'
-
+CHEF_CLIENT_VERSION = '11.4.4'
 
 # load chef config using CHEF_CONFIG_PATH
 try:
@@ -50,26 +50,33 @@ except Exception as e:
 
 
 def configure_node(node):
+    config = node.layer.config.copy()
     # http://cloudinit.readthedocs.org/en/latest/topics/examples.html#install-and-run-chef-recipes
-    config = config['chef'] = {}
-    config['node_name'] = node.id
-    # get run_list, attributes and chef version from the layer
-    run_list = node.layer.config.get('run_list')
+    chef = config['chef'] = {}
+    chef['node_name'] = node.id
+    # if run_list specified in layer, use it (assumes csv)
+    run_list = node.layer.config.get('run_list', [])
     if run_list:
-        config['run_list'] = run_list.split(',')
+        chef['run_list'] = run_list.split(',')
+    # otherwise construct a run_list using proxy/runtime flags
+    else:
+        run_list = ['recipe[deis]']
+        if node.layer.runtime is True:
+            run_list.append('recipe[deis::runtime]')
+        if node.layer.proxy is True:
+            run_list.append('recipe[deis::proxy]')
+        chef['run_list'] = run_list
     attrs = node.layer.config.get('initial_attributes')
     if attrs:
-        config['initial_attributes'] = attrs
-    chef_version = node.layer.config.get('chef_version')
-    if chef_version:
-        config['version'] = chef_version
+        chef['initial_attributes'] = attrs
     # add global chef config
-    config['ruby_version'] = CHEF_RUBY_VERSION
-    config['server_url'] = CHEF_SERVER_URL
-    config['install_type'] = CHEF_INSTALL_TYPE
-    config['environment'] = CHEF_ENVIRONMENT
-    config['validation_name'] = CHEF_VALIDATION_NAME
-    config['validation_key'] = CHEF_VALIDATION_KEY
+    chef['version'] = CHEF_CLIENT_VERSION
+    chef['ruby_version'] = CHEF_RUBY_VERSION
+    chef['server_url'] = CHEF_SERVER_URL
+    chef['install_type'] = CHEF_INSTALL_TYPE
+    chef['environment'] = CHEF_ENVIRONMENT
+    chef['validation_name'] = CHEF_VALIDATION_NAME
+    chef['validation_key'] = CHEF_VALIDATION_KEY
     return config
 
 
@@ -133,10 +140,10 @@ def converge_controller():
 
 
 def converge_node(node):
-    ssh = util.connect_ssh(node.layer.ssh_username,
-                           node.fqdn, 22,
-                           node.layer.ssh_private_key)
-    output, rc = ssh.exec_ssh(ssh, 'sudo chef-client')
+    ssh = connect_ssh(node.layer.ssh_username,
+                      node.fqdn, 22,
+                      node.layer.ssh_private_key)
+    output, rc = exec_ssh(ssh, 'sudo chef-client')
     return output, rc
 
 

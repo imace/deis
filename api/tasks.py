@@ -43,7 +43,9 @@ def build_layer(layer_id):
 def destroy_layer(layer_id):
     layer = Layer.objects.get(id=layer_id)
     provider = import_provider_module(layer.flavor.provider.type)
+    group([destroy_node.s(n.id) for n in layer.node_set.all()]).apply_async().join()
     provider.destroy_layer(layer)
+    layer.delete()
     return layer_id
 
 
@@ -61,19 +63,7 @@ def build_node(node_id):
     provider.build_node(node, config)
     # use CM to bootstrap the node
     CM.bootstrap_node(node)
-    return config
-
-
-@task
-def bootstrap_node(node_id):
-    node = Node.objects.get(id=node_id)
-    return node.id
-
-
-@task
-def converge_node(node_id):
-    node = Node.objects.get(id=node_id)
-    return node.id
+    return node_id
 
 
 @task
@@ -84,6 +74,13 @@ def destroy_node(node_id):
     provider.destroy_node(node)
     node.delete()
     return node.id
+
+
+@task
+def converge_node(node_id):
+    node = Node.objects.get(id=node_id)
+    output, rc = CM.converge_node(node)
+    return output, rc
 
 
 @task
@@ -124,5 +121,7 @@ def converge_formation(formation_id):
 @task
 def destroy_formation(formation_id):
     formation = Formation.objects.get(id=formation_id)
+    group([destroy_node.s(n.id) for n in formation.node_set.all()]).apply_async().join()
+    group([destroy_layer.s(l.id) for l in formation.layer_set.all()]).apply_async().join()
     formation.delete()
     return formation_id

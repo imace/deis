@@ -15,7 +15,7 @@ def bootstrap_node(node):
 
 
 def converge_node(node):
-    return node
+    return '', 0
 
 
 def destroy_node(node):
